@@ -308,43 +308,34 @@ export default function Vip() {
     if (savedStateStr) {
       try {
         const parsed = JSON.parse(savedStateStr);
-        // Automatic daily task operation: if save is from a different calendar day, auto-reset state to get_order!
-        if (parsed.claimedAtDate && parsed.claimedAtDate !== todayStr) {
-          setClaimed(false);
-          setClaimedAtDate("");
-          setPurchasedItems({});
-          setCommissionEarned(false);
-          setAllPurchasedAt(null);
-          setCurrentOrderState("get_order");
-          setActiveTab("get_order");
-          
-          const cleanState = {
-            status: "get_order",
-            claimed: false,
-            claimedAtDate: "",
-            purchasedItems: {},
-            commissionEarned: false,
-            allPurchasedAt: null
-          };
-          localStorage.setItem(`workbench_state_${uid}`, JSON.stringify(cleanState));
-        } else {
-          const loadedClaimed = parsed.claimed || false;
-          const loadedClaimedAtDate = parsed.claimedAtDate || "";
-          const loadedPurchasedItems = parsed.purchasedItems || {};
-          const loadedCommissionEarned = parsed.commissionEarned || false;
-          const loadedPurchasedAt = parsed.allPurchasedAt || null;
-          let loadedStatus = parsed.status || "get_order";
+        // Load stored state without aggressively resetting just because date changed
+        const loadedClaimed = parsed.claimed || false;
+        const loadedClaimedAtDate = parsed.claimedAtDate || "";
+        const loadedPurchasedItems = parsed.purchasedItems || {};
+        const loadedCommissionEarned = parsed.commissionEarned || false;
+        const loadedPurchasedAt = parsed.allPurchasedAt || null;
+        let loadedStatus = parsed.status || "get_order";
 
-          setClaimed(loadedClaimed);
-          setClaimedAtDate(loadedClaimedAtDate);
-          setPurchasedItems(loadedPurchasedItems);
-          setCommissionEarned(loadedCommissionEarned);
-          setAllPurchasedAt(loadedPurchasedAt);
-          setCurrentOrderState(loadedStatus);
-          
-          if (loadedStatus) {
-            setActiveTab(loadedStatus);
+        if (loadedPurchasedAt) {
+          const hoursElapsed = (Date.now() - loadedPurchasedAt) / (1000 * 60 * 60);
+          if (hoursElapsed >= 24) {
+            loadedStatus = "arrived";
+          } else if (hoursElapsed >= 6) {
+            loadedStatus = "shipped";
+          } else {
+            loadedStatus = "unshipped";
           }
+        }
+
+        setClaimed(loadedClaimed);
+        setClaimedAtDate(loadedClaimedAtDate);
+        setPurchasedItems(loadedPurchasedItems);
+        setCommissionEarned(loadedCommissionEarned);
+        setAllPurchasedAt(loadedPurchasedAt);
+        setCurrentOrderState(loadedStatus);
+        
+        if (loadedStatus && loadedStatus !== "arrived") {
+          setActiveTab(loadedStatus);
         }
       } catch (e) {
         // clear corrupted
@@ -369,6 +360,34 @@ export default function Vip() {
       window.removeEventListener("storage", loadUserDataAndState);
     };
   }, []);
+
+  // Poll for time-based order status updates
+  useEffect(() => {
+    if (!allPurchasedAt) return;
+
+    const intervalId = setInterval(() => {
+      const hoursElapsed = (Date.now() - allPurchasedAt) / (1000 * 60 * 60);
+      let newStatus: typeof currentOrderState = "unshipped";
+      if (hoursElapsed >= 24) {
+        newStatus = "arrived";
+      } else if (hoursElapsed >= 6) {
+        newStatus = "shipped";
+      }
+
+      if (newStatus !== currentOrderState && newStatus !== "get_order" && newStatus !== "buy_behalf") {
+        saveWorkbenchState(
+          newStatus,
+          claimed,
+          claimedAtDate,
+          purchasedItems,
+          commissionEarned,
+          allPurchasedAt
+        );
+      }
+    }, 1000 * 60); // Check every minute
+
+    return () => clearInterval(intervalId);
+  }, [allPurchasedAt, currentOrderState, claimed, claimedAtDate, purchasedItems, commissionEarned]);
 
   // Sync Task changes back to localStorage with support for purchase time timestamp
   const saveWorkbenchState = (
@@ -414,14 +433,14 @@ export default function Vip() {
       return;
     }
 
-    // Require active package bought
-    if (!activePackage) {
+    // Require active package bought, unless first-time user doing training
+    if (!activePackage && currentUser?.hasCompletedTraining) {
       setAlertMessage("عذراً! لا يوجد عقد نشط حالياً لحسابك. يرجى الاشتراك وتفعيل إحدى الباقات في صفحة 'انضم إلينا' أولاً لتوليد المهام اليومية.");
       return;
     }
 
     // Check if noon has arrived (Automatic or just simulator allowed)
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = new Date().toLocaleDateString('en-CA');
     
     // Clean initial purchased status map based on active products
     const initialPurchased: Record<string, boolean> = {};
@@ -434,7 +453,10 @@ export default function Vip() {
   };
 
   const getScaledCommission = () => {
-    return activePackage ? activePackage.daily_income : 0;
+    if (!activePackage) {
+      return currentUser && !currentUser.hasCompletedTraining ? 2.0 : 0;
+    }
+    return activePackage.daily_income;
   };
 
   // 2. Click "شراء" (Buy product)
@@ -463,29 +485,32 @@ export default function Vip() {
       
       if (userIndex !== -1) {
         usersList[userIndex].balance += commission;
+
+        // If training, mark it as completed now
+        if (!activePackage && !usersList[userIndex].hasCompletedTraining) {
+            usersList[userIndex].hasCompletedTraining = true;
+            // update currentUser state so React reflects the new training status
+            setCurrentUser({...currentUser, hasCompletedTraining: true});
+        }
+
         updateSimulatedUsers(usersList);
         setUserBalanceVal(usersList[userIndex].balance);
       }
 
-      // 2. Progress state directly to final complete state "arrived" immediately without timers/clutter
+      // 2. Progress state directly to initial complete state "unshipped"
       const buyTimestamp = Date.now();
-      saveWorkbenchState("arrived", true, claimedAtDate, updatedPurchased, true, buyTimestamp);
+      saveWorkbenchState("unshipped", true, claimedAtDate, updatedPurchased, true, buyTimestamp);
       setShowBuyModal(false);
       setSelectedBuyItem(null);
       
       // Auto-focus the next tab
-      setActiveTab("arrived");
+      setActiveTab("unshipped");
     } else {
       // Standard single item markup
       saveWorkbenchState(currentOrderState, true, claimedAtDate, updatedPurchased, false, allPurchasedAt);
       setShowBuyModal(false);
       setSelectedBuyItem(null);
     }
-  };
-
-  const resetTaskDayCycle = () => {
-    saveWorkbenchState("get_order", false, "", {}, false, null);
-    setActiveTab("get_order");
   };
 
   return (
@@ -512,39 +537,15 @@ export default function Vip() {
         })}
       </div>
 
-      {/* Check layout logic for user active membership packages */}
-      {!activePackage ? (
-        // Non-active membership placeholder card
-        <div className="mx-2.5 mt-3 bg-white border border-[#f1f3f7] rounded-xl p-5 text-center shadow-xs">
-          <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-500 mx-auto border border-amber-100 mb-3 animate-pulse">
-            <AlertTriangle size={20} />
-          </div>
-          <h3 className="text-[14.5px] font-extrabold text-slate-800 leading-snug">
-              لا يوجد عقد ذكي نشط لحسابك!
-          </h3>
-          <p className="text-[12px] text-gray-500 mt-2 leading-relaxed font-semibold">
-              عذراً، يرجى الاشتراك في إحدى باقات العضويات المتاحة بصفحة <span className="text-[#3a7af2] font-extrabold">'انضم إلينا'</span> (مثال الباقة ST-1 بمبلغ 50$) لتشغيل مهام طاولة العمل والمطالبة بالعمولة اليومية والطلبات!
-          </p>
-          <div className="mt-4 flex gap-2">
-            <button 
-              onClick={() => navigate("/mall")}
-              className="flex-1 bg-[#3a7af2] hover:bg-[#2d66cd] text-white font-bold py-2.5 px-3 rounded-xl text-[12px] shadow-sm active:scale-95 transition-all cursor-pointer"
-            >
-               الذهاب لصفحة انضم إلينا (الباقات)
-            </button>
-          </div>
-        </div>
-      ) : (
-
-        /* Active Core Workspace tabs switch container */
-        <div className="px-3 py-2 space-y-3">
+      {/* Active Core Workspace tabs switch container */}
+      <div className="px-3 py-2 space-y-3">
           
           {/* TAB 1: الحصول على الطلب */}
           {activeTab === "get_order" && (
             <div className="space-y-3 pt-1 animate-fadeIn">
               
-              {/* If already claimed today's task */}
-              {claimed ? (
+              {/* If already claimed today's task but not yet arrived */}
+              {claimed && currentOrderState !== "arrived" ? (
                 <div className="flex flex-col items-center justify-center pt-24 pb-12 animate-fadeIn text-center">
                   <Image size={36} strokeWidth={1.5} className="text-gray-300/80 mb-3 animate-pulse" />
                   <p className="text-[#a5b4ca] text-[13px] font-bold leading-none select-none">
@@ -554,9 +555,17 @@ export default function Vip() {
               ) : (
                 <>
                   <div className="bg-white border border-[#f1f3f7] rounded-xl p-3.5 shadow-sm">
-                    <p className="text-[12.5px] text-gray-500 leading-relaxed font-semibold">
-                       يرجى مراجعة تفاصيل الباقة النشطة: <span className="text-[#2aacc1] font-extrabold text-[13px]">{activePackage.name}</span> برصيد عقد <span className="text-[#f16f2c] font-black">${activePackage.price}</span> وعمولة يومية مضمونة <span className="text-[#10b981] font-black">${activePackage.daily_income}</span>. اضغط بالمطالبة بالأسفل لتلقي الطلبات فوراً.
-                    </p>
+                    {activePackage ? (
+                      <p className="text-[12.5px] text-gray-500 leading-relaxed font-semibold">
+                         يرجى مراجعة تفاصيل الباقة النشطة: <span className="text-[#2aacc1] font-extrabold text-[13px]">{activePackage.name}</span> برصيد عقد <span className="text-[#f16f2c] font-black">${activePackage.price}</span> وعمولة يومية مضمونة <span className="text-[#10b981] font-black">${activePackage.daily_income}</span>. اضغط بالمطالبة بالأسفل لتلقي الطلبات فوراً.
+                      </p>
+                    ) : (
+                      <p className="text-[12.5px] text-gray-500 leading-relaxed font-semibold">
+                        {currentUser?.hasCompletedTraining 
+                          ? "عذراً، يرجى الاشتراك في إحدى باقات العضويات المتاحة بصفحة 'انضم إلينا' لتشغيل مهام طاولة العمل والمطالبة بالعمولة اليومية والطلبات!"
+                          : "مهام التدريب: قم بإتمام المهام لمرة واحدة لكسب عمولة التدريب 2$. اضغط المطالبة للبدء."}
+                      </p>
+                    )}
                   </div>
 
                   {/* 4 products list */}
@@ -581,7 +590,7 @@ export default function Vip() {
                           </div>
                         </div>
                         <div className="text-gray-400 text-[10px] font-mono leading-none font-semibold">
-                          2026-05-23
+                          {new Date().toLocaleDateString('en-CA')}
                         </div>
                       </div>
                     ))}
@@ -677,7 +686,7 @@ export default function Vip() {
                                   ${itemPrice.toFixed(2)}
                                 </span>
                                 <span className="text-gray-400 text-[10px] font-mono mt-1 block">
-                                   2026-05-23
+                                   {new Date().toLocaleDateString('en-CA')}
                                 </span>
                               </div>
                             </div>
@@ -856,13 +865,6 @@ export default function Vip() {
                     <p className="text-[11.5px] text-gray-500 mt-1 leading-relaxed max-w-sm mx-auto">
                       اكتملت الدورة اليومية للمبيعات بنجاح، وتم تأمين رصيد العقد المتاح وإضافة العمولات المضمونة لمحفظتك بالكامل. جاهز لبدء جولة مبيعات بضائع جديدة غداً!
                     </p>
-                    
-                    <button
-                      onClick={resetTaskDayCycle}
-                      className="mt-3 bg-[#3a7af2] hover:bg-[#2d66cd] active:scale-95 transition-all text-white font-bold text-[12px] py-1.5 px-3.5 rounded-lg cursor-pointer shadow-md inline-flex items-center gap-1.5"
-                    >
-                      <span>تحديث الدورة وبدء يوم جديد 🔄</span>
-                    </button>
                   </div>
 
                   <div className="space-y-2.5">
@@ -912,7 +914,6 @@ export default function Vip() {
           )}
 
         </div>
-      )}
 
       {/* CORE MODAL 1: معلومات الطلب للشراء (High Fidelity Purchase Confirmation Modal resembling picture 3) */}
       <AnimatePresence>

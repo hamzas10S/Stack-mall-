@@ -506,7 +506,7 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex items-center gap-4 text-xs font-medium text-gray-500">
-            <div>التوقيت الحالي: <span className="font-mono font-bold text-gray-800">2026-05-23 UTC</span></div>
+            <div>التوقيت الحالي: <span className="font-mono font-bold text-gray-800">{new Date().toLocaleDateString('en-CA')}</span></div>
           </div>
         </header>
 

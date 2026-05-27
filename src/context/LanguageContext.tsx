@@ -162,7 +162,6 @@ const translationMap: Record<string, string> = {
   "تفاصيل الدخل": "P&L Earnings",
   "إعادة التعبئة": "Recharge Up",
   "اكسب عمولة": "Earn Commission",
-  "انسحاب": "Withdrawals",
   "الدفع الفوري": "Direct Remit",
   "صندوق هدايا": "Perks Ledger",
   "سجلات الحسابات": "Ledger Accounts",

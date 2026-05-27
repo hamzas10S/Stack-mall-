@@ -14,6 +14,7 @@ export interface SimulatedUser {
   walletAddress?: string;
   transactionPassword?: string;
   referredBy?: string;
+  hasCompletedTraining?: boolean;
 }
 
 export interface SimulatedTransaction {
