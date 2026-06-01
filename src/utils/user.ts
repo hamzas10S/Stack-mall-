@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export interface SimulatedUser {
   id: string;
   email: string;
@@ -47,7 +49,86 @@ const DEFAULT_USERS: SimulatedUser[] = [
   }
 ];
 
+let supabaseUsersCache: SimulatedUser[] | null = null;
+let supabaseTxsCache: SimulatedTransaction[] | null = null;
+
+export const initSupabaseSync = async () => {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const currentUserId = sessionData?.session?.user?.id;
+    
+    // Only fetch current user data to avoid data leak (unless admin, which uses separate queries now)
+    let query = supabase.from('app_users').select('*');
+    if (currentUserId) {
+        query = query.eq('id', currentUserId);
+    } else {
+        query = query.limit(1); // Do not dump whole db to unauthenticated users
+    }
+
+    const { data: usersData } = await query;
+    if (usersData && usersData.length > 0) {
+      supabaseUsersCache = usersData.map(u => ({
+        id: u.id.toString(),
+        email: u.email,
+        regDate: u.reg_date || new Date().toISOString(),
+        isActive: u.is_active || false,
+        packageBought: u.package_bought || "",
+        withdrawalsCount: u.withdrawals_count || 0,
+        rechargesCount: u.recharges_count || 0,
+        balance: Number(u.balance) || 0,
+        contractBalance: Number(u.contract_balance) || 0,
+        lastActivity: u.last_activity || "نشط الآن",
+        isExpired: u.is_expired || false,
+        phone: u.phone,
+        referredBy: u.referred_by,
+        hasCompletedTraining: u.has_completed_training || false
+      }));
+    }
+
+    // Only fetch current user's transactions
+    let txQuery = supabase.from('app_transactions').select('*');
+    if (currentUserId) {
+        txQuery = txQuery.eq('user_id', currentUserId);
+    } else {
+        txQuery = txQuery.limit(1);
+    }
+    
+    const { data: txsData } = await txQuery;
+    if (txsData && txsData.length > 0) {
+      supabaseTxsCache = txsData.map(t => ({
+        id: t.id.toString(),
+        userId: t.user_id?.toString() || "10001",
+        type: t.type as "deposit" | "withdraw",
+        amount: Number(t.amount) || 0,
+        status: t.status as any,
+        date: t.timestamp || new Date().toISOString(),
+        network: t.network,
+        address: t.wallet
+      }));
+    }
+  } catch (err) {
+    console.error("Supabase sync failed", err);
+  }
+};
+
+const mapSimulatedToDb = (u: SimulatedUser) => ({
+    email: u.email,
+    reg_date: u.regDate,
+    is_active: u.isActive,
+    package_bought: u.packageBought,
+    withdrawals_count: u.withdrawalsCount,
+    recharges_count: u.rechargesCount,
+    balance: u.balance,
+    contract_balance: u.contractBalance,
+    last_activity: u.lastActivity,
+    is_expired: u.isExpired,
+    phone: u.phone,
+    referred_by: u.referredBy,
+    has_completed_training: u.hasCompletedTraining
+});
+
 export const getSimulatedUsers = (): SimulatedUser[] => {
+  if (supabaseUsersCache) return supabaseUsersCache;
   const data = localStorage.getItem("simulated_users");
   if (!data) {
     localStorage.setItem("simulated_users", JSON.stringify(DEFAULT_USERS));
@@ -67,20 +148,27 @@ export const getSimulatedUsers = (): SimulatedUser[] => {
   }
 };
 
-export const updateSimulatedUsers = (users: SimulatedUser[]) => {
+export const updateSimulatedUsers = async (users: SimulatedUser[]) => {
+  supabaseUsersCache = users;
   localStorage.setItem("simulated_users", JSON.stringify(users));
+  // Background Sync
+  try {
+    for (const u of users) {
+      if (u.id === "10001" || !u.id.includes("-")) continue; // DO NOT sync mock users to supabase
+      await supabase.from('app_users').update({
+         balance: u.balance,
+         contract_balance: u.contractBalance,
+         package_bought: u.packageBought,
+         is_active: u.isActive
+      }).eq('id', u.id);
+    }
+  } catch(e) {}
 };
 
-export const registerSimulatedUser = (email: string, phone: string, referredBy?: string): SimulatedUser => {
+export const registerSimulatedUser = async (email: string, phone: string, referredBy?: string, uid?: string): Promise<SimulatedUser> => {
   const users = getSimulatedUsers();
   
-  // Find next ID
-  let nextIdVal = 10002;
-  const ids = users.map(u => parseInt(u.id, 10)).filter(id => !isNaN(id));
-  if (ids.length > 0) {
-    nextIdVal = Math.max(...ids) + 1;
-  }
-  const nextId = nextIdVal.toString();
+  let nextId = uid || crypto.randomUUID();
   
   const newUser: SimulatedUser = {
     id: nextId,
@@ -94,13 +182,15 @@ export const registerSimulatedUser = (email: string, phone: string, referredBy?:
     contractBalance: 0.00,
     lastActivity: "نشط الآن",
     isExpired: false,
+    phone,
     referredBy
   };
   
   users.push(newUser);
-  updateSimulatedUsers(users);
-  
+  supabaseUsersCache = users;
+  localStorage.setItem("simulated_users", JSON.stringify(users));
   localStorage.setItem("userId", nextId);
+
   return newUser;
 };
 

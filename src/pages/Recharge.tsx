@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, CalendarClock, Link2, ShieldCheck, Clock, HeadphonesIcon, Copy, Upload, CheckCircle } from 'lucide-react';
 import QRCode from 'react-qr-code';
+import { supabase } from '../utils/supabase';
 import { addSimulatedTransaction } from '../utils/user';
 
 import { useTranslation } from '../context/LanguageContext';
@@ -18,19 +19,52 @@ export default function Recharge() {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Validate file size and type simply here before upload
+      if (file.size > 5 * 1024 * 1024) {
+        setErrorMsg('حجم الصورة كبير جداً. أقصى حد 5 ميغابايت.');
+        return;
+      }
+      
       setFileName(file.name);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProofImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setIsUploading(true);
+      setErrorMsg('');
+      
+      try {
+        const fileExt = file.name.split('.').pop();
+        const storedName = `${Math.random()}.${fileExt}`;
+        const filePath = `recharges/${storedName}`;
+        
+        const { error: uploadError, data } = await supabase.storage
+          .from('proofs')
+          .upload(filePath, file);
+          
+        if (uploadError) {
+          throw uploadError;
+        }
+        
+        const { data: { publicUrl } } = supabase.storage.from('proofs').getPublicUrl(filePath);
+        setProofImage(publicUrl);
+        
+      } catch (err: any) {
+        console.error("Upload error:", err);
+        setErrorMsg('حدث خطأ أثناء رفع الصورة: ' + (err.message || 'حاول مرة أخرى'));
+        setFileName('');
+        // Fallback to base64 if bucket fails in early testing
+        const reader = new FileReader();
+        reader.onloadend = () => setProofImage(reader.result as string);
+        reader.readAsDataURL(file);
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
-  const handleSubmitRecharge = () => {
+  const handleSubmitRecharge = async () => {
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -45,13 +79,36 @@ export default function Recharge() {
       return;
     }
 
+    const currentUserId = localStorage.getItem("userId") || "10001";
+    
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        // Safe insert directly to supabase Database
+        const { error: insErr } = await supabase.from('app_transactions').insert({
+          user_id: sessionData.session.user.id,
+          type: 'deposit',
+          amount: parsedAmt,
+          status: 'pending',
+          network: 'BEP20',
+          wallet: address,
+          proof_image: proofImage
+        });
+        if (insErr) {
+            console.error("DB Insert Error:", insErr);
+        }
+      }
+    } catch(err) {
+       console.error("DB Error", err);
+    }
+
     addSimulatedTransaction(
       "deposit",
       parsedAmt,
       "BEP20",
       address,
       proofImage,
-      localStorage.getItem("userId") || "10001"
+      currentUserId
     );
 
     setSuccessMsg('تم إرسال إثبات الشحن بنجاح! الإدارة ستراجع طلبك وتضيف الأموال إلى حسابك فوراً.');
@@ -259,10 +316,8 @@ export default function Recharge() {
                    setIsDragging(false);
                    const file = e.dataTransfer.files?.[0];
                    if (file) {
-                     setFileName(file.name);
-                     const reader = new FileReader();
-                     reader.onloadend = () => { setProofImage(reader.result as string); };
-                     reader.readAsDataURL(file);
+                     // create synthetic event
+                     handleImageChange({ target: { files: [file] } } as any);
                    }
                  }}
                  className={`border-2 border-dashed rounded-lg p-5 flex flex-col items-center justify-center cursor-pointer transition-colors ${
@@ -274,22 +329,29 @@ export default function Recharge() {
                     accept="image/*"
                     onChange={handleImageChange}
                     className="hidden"
+                    disabled={isUploading}
                   />
                   <Upload size={24} className="text-[#3a7af2] mb-1" />
                   <span className="text-[12px] font-semibold text-gray-700">اضغط لرفع الصورة أو اسحبها هنا</span>
                   <span className="text-[10px] text-gray-400 mt-1">تنسيق الصور المدعومة: PNG, JPG, JPEG</span>
                   
-                  {fileName && (
+                  {isUploading && (
+                    <div className="mt-2 text-xs font-bold text-blue-600">
+                      جارِ رفع الصورة، يرجى الانتظار...
+                    </div>
+                  )}
+
+                  {fileName && !isUploading && (
                     <div className="mt-2 text-xs font-bold text-green-600 bg-green-50 border border-green-100 rounded px-2 py-1 flex items-center gap-1 mx-auto max-w-[80%]">
                       <CheckCircle size={12} className="shrink-0" />
-                      <span className="truncate">تم اختيار: {fileName}</span>
+                      <span className="truncate">تم الرفع: {fileName}</span>
                     </div>
                   )}
                </label>
             </div>
 
             {/* Preview loaded image */}
-            {proofImage && (
+            {proofImage && !isUploading && (
               <div className="border border-gray-100 rounded-lg p-2 bg-slate-50 flex flex-col items-center">
                 <span className="text-[10px] font-medium text-gray-500 mb-1">معاينة صورة الإثبات:</span>
                 <img src={proofImage} alt="Payment Proof" className="max-h-[140px] rounded object-contain border border-gray-200" />
@@ -299,9 +361,12 @@ export default function Recharge() {
             {/* Confirm Recharge Button */}
             <button
                onClick={handleSubmitRecharge}
-               className="w-full bg-[#3a7af2] hover:bg-blue-600 text-white font-bold py-2.5 rounded-lg text-[13px] shadow-sm shadow-blue-500/20 active:scale-[0.98] transition-transform cursor-pointer text-center"
+               disabled={isUploading || !proofImage}
+               className={`w-full font-bold py-2.5 rounded-lg text-[13px] shadow-sm active:scale-[0.98] transition-all cursor-pointer text-center ${
+                 isUploading || !proofImage ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#3a7af2] hover:bg-blue-600 text-white shadow-blue-500/20'
+               }`}
             >
-               تأكيد وإرسال الإثبات للإدارة
+               {isUploading ? 'جاري رفع الملف...' : 'تأكيد وإرسال الإثبات للإدارة'}
             </button>
          </div>
 

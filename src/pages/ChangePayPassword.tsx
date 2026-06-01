@@ -2,6 +2,7 @@ import Header from '../components/Header';
 import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../utils/supabase';
 
 export default function ChangePayPassword() {
   const navigate = useNavigate();
@@ -11,15 +12,40 @@ export default function ChangePayPassword() {
   const [showOld, setShowOld] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
     if (newPassword !== confirmPassword) {
-      alert("كلمات المرور غير متطابقة");
+      setErrorMsg("كلمات المرور الجديدة غير متطابقة");
       return;
     }
-    // Handle pay password change logic here
-    navigate('/home');
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setErrorMsg("يجب تسجيل الدخول أولاً");
+        return;
+      }
+      
+      // Call secure RPC function to update transaction password
+      // It can internally verify the old password before updating
+      const { data: isUpdated, error } = await supabase.rpc('change_transaction_password', {
+        p_uid: session.user.id,
+        p_old_password: oldPassword,
+        p_new_password: newPassword
+      });
+
+      if (error || !isUpdated) {
+        setErrorMsg("كلمة المرور القديمة غير صحيحة، أو حدث خطأ أثناء التحديث");
+        return;
+      }
+
+      navigate('/home');
+    } catch (err) {
+      setErrorMsg("عذراً، حدث خطأ خارجي الرجاء المحاولة لاحقاً");
+    }
   };
 
   return (
@@ -27,6 +53,11 @@ export default function ChangePayPassword() {
       <Header title="تعيين كلمة مرور الدفع" bgClass="bg-header-gradient" />
       
       <div className="p-4 mt-2">
+        {errorMsg && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm p-3 rounded-xl font-bold text-center">
+            {errorMsg}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
           
           <div className="space-y-1.5">

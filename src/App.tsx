@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Mall from './pages/Mall';
@@ -20,8 +21,36 @@ import Shares from './pages/Shares';
 import LanguageSelect from './pages/LanguageSelect';
 import AdminDashboard from './pages/AdminDashboard';
 import { LanguageProvider } from './context/LanguageContext';
+import { initSupabaseSync } from './utils/user';
+import { supabase } from './utils/supabase';
 
 export default function App() {
+  useEffect(() => {
+    initSupabaseSync();
+    
+    // Hardened Auth sync
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        localStorage.setItem("userId", session.user.id);
+      } else {
+        localStorage.removeItem("userId");
+      }
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        localStorage.setItem("userId", session.user.id);
+        initSupabaseSync();
+      } else {
+        localStorage.removeItem("userId");
+      }
+    });
+    
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <LanguageProvider>
       <BrowserRouter>

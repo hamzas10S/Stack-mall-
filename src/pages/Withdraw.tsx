@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
+import { supabase } from '../utils/supabase';
 import { 
   getUserBalance, 
   addSimulatedTransaction, 
@@ -101,7 +102,7 @@ export default function Withdraw() {
     setErrorMsg('');
   };
   
-  const handleSubmitWithdrawal = () => {
+  const handleSubmitWithdrawal = async () => {
     setErrorMsg('');
     setSuccessMsg('');
     
@@ -138,18 +139,47 @@ export default function Withdraw() {
       return;
     }
 
-    // 3. Password Verification Check
-    const activeUsers = getSimulatedUsers();
-    const targetUser = activeUsers.find(x => x.id === currentUserId);
-    const savedPassword = targetUser?.transactionPassword || localStorage.getItem('withdrawalPassword') || '';
-    
-    if (password !== savedPassword) {
-      setErrorMsg('خطأ في كلمة المرور!'); // Incorrect password error!
+    // 3. Password Verification Check (Server-Side)
+    try {
+      const { data: isValid, error: verifyError } = await supabase.rpc('verify_transaction_password', {
+        p_password: password
+      });
+
+      if (verifyError || !isValid) {
+        setErrorMsg('خطأ في كلمة المرور!'); // Incorrect password error!
+        return;
+      }
+    } catch (err) {
+      setErrorMsg('تعذر التحقق من كلمة المرور. حاول مرة أخرى.');
       return;
     }
     
     // Add pending transaction under active user with wallet & payment credentials so admin can review
+    const activeUsers = getSimulatedUsers();
+    const targetUser = activeUsers.find(x => x.id === currentUserId);
     const finalWallet = targetUser?.walletAddress || localStorage.getItem('withdrawalWallet') || "بانتظار الإضافة";
+    
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session) {
+        // Safe insert directly to supabase Database
+        const { error: insErr } = await supabase.from('app_transactions').insert({
+          user_id: sessionData.session.user.id,
+          type: 'withdraw',
+          amount: amtVal,
+          status: 'pending',
+          network: 'BEP20',
+          wallet: finalWallet,
+        });
+        if (insErr) {
+            console.error("DB Insert Error:", insErr);
+        }
+      }
+    } catch(err) {
+       console.error("DB Error", err);
+    }
+    
+    // Fallback sync local structure as well so old features don't break instantly
     addSimulatedTransaction("withdraw", amtVal, "BEP20", finalWallet, "", currentUserId, password);
     
     setSuccessMsg('تم إرسال طلب السحب بنجاح بانتظار موافقة الإدارة!');

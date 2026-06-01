@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { addSimulatedReferral, registerSimulatedUser } from "../utils/user";
 import { useTranslation } from "../context/LanguageContext";
+import { supabase } from "../utils/supabase";
 
 interface CaptchaChar {
   char: string;
@@ -69,6 +70,7 @@ export default function Register() {
   
   const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [validationError, setValidationError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const [captchaChars, setCaptchaChars] = useState<CaptchaChar[]>([]);
 
@@ -122,7 +124,7 @@ export default function Register() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     const newErrors: Record<string, boolean> = {};
     
     if (!phone.trim()) newErrors.phone = true;
@@ -157,12 +159,52 @@ export default function Register() {
 
     setErrors({});
     setValidationError("");
-    
-    registerSimulatedUser(email, phone, inviteCode || undefined);
-    if (inviteCode) {
-      addSimulatedReferral();
+    setIsLoading(true);
+
+    try {
+      const emailObj = email || `${phone}@app.local`; // Use actual email if provided, fallback to dummy
+      const { data, error } = await supabase.auth.signUp({
+        email: emailObj,
+        password: password,
+      });
+
+      if (error) {
+        setValidationError("حدث خطأ في التسجيل. قد يكون الحساب موجوداً.");
+        refreshCaptcha();
+      } else if (data.user) {
+        // Insert directly to catch errors
+        const { error: insErr } = await supabase.from('app_users').insert([{
+          id: data.user.id,
+          email: emailObj,
+          phone: phone,
+          transaction_password: payPassword,
+          referred_by: inviteCode || null,
+          reg_date: new Date().toISOString().split("T")[0],
+          is_active: false,
+          balance: 0,
+          contract_balance: 0
+        }]);
+
+        if (insErr) {
+            console.error("Supabase insert error:", insErr);
+            setValidationError("عطل في قاعدة البيانات: " + insErr.message + (data.session === null ? " (رجاء إيقاف Confirm Email في Supabase)" : ""));
+            refreshCaptcha();
+            setIsLoading(false);
+            return;
+        }
+
+        await registerSimulatedUser(emailObj, phone, inviteCode || undefined, data.user.id);
+        if (inviteCode) {
+          addSimulatedReferral();
+        }
+        localStorage.setItem("userId", data.user.id);
+        navigate("/home");
+      }
+    } catch(err) {
+      setValidationError("حدث خطأ في الشبكة");
+    } finally {
+      setIsLoading(false);
     }
-    navigate("/home");
   };
 
   const handleFieldChange = (field: string, val: string, setter: (val: string) => void) => {
@@ -354,9 +396,10 @@ export default function Register() {
         <div className="pt-1 space-y-1.55">
           <button
             onClick={handleRegister}
-            className="w-full bg-[#367bf6] hover:bg-blue-600 transition-colors text-white rounded-[6px] h-[37px] font-bold text-[13.5px] tracking-wide shadow-md shadow-blue-500/10 active:scale-[0.98]"
+            disabled={isLoading}
+            className="w-full bg-[#367bf6] hover:bg-blue-600 disabled:opacity-75 transition-colors text-white rounded-[6px] h-[37px] font-bold text-[13.5px] tracking-wide shadow-md shadow-blue-500/10 active:scale-[0.98]"
           >
-            {t("سجل الآن")}
+            {isLoading ? t("جاري التحميل...") : t("سجل الآن")}
           </button>
 
           <button className="w-full mt-1.5 bg-[#ecf3fe] border border-[#a6c7f4] text-[#4281ee] hover:bg-[#e1ecfe] transition-colors rounded-[6px] h-[37px] font-bold text-[13.5px] active:scale-[0.98]">
