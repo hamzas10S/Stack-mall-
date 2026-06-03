@@ -734,7 +734,7 @@ export default function AdminDashboard() {
                           <div>المستخدم (ID): <span className="font-bold text-gray-900 font-mono">{tx.userId}</span></div>
                           <div>بريده الموثق: <span className="font-mono text-gray-650">{client?.email || 'غير معروف'}</span></div>
                           <div>رقم جواله / حسابه: <span className="font-mono text-[#1975e5] font-bold">{client?.phone || 'غير مسجل أو غير متاح'}</span></div>
-                          <div>رصيد العميل الحالي: <span className="font-bold text-green-600 font-mono">${client?.balance.toFixed(2)}</span></div>
+                          <div>رصيد العميل الحالي: <span className="font-bold text-green-600 font-mono">${(client?.balance || 0).toFixed(2)}</span></div>
                           <div>مبلغ السحب المطلوب: <span className="font-bold text-red-600 font-mono text-sm">${tx.amount.toFixed(2)}</span></div>
                           <div>كلمة مرور السحب: <span className="font-bold text-purple-600 font-mono">{tx.txPassword || client?.transactionPassword || 'غير معينة'}</span></div>
                           <div className="col-span-2 border-t border-slate-200 pt-1.5 mt-0.5">
@@ -804,7 +804,7 @@ export default function AdminDashboard() {
                             <div>رقم العميل (ID): <span className="font-bold text-gray-900 font-mono">{tx.userId}</span></div>
                             <div>البريد المسجل: <span className="font-mono text-gray-600">{client?.email || 'غير معروف'}</span></div>
                             <div>المبلغ المزعوم تحويله: <span className="font-bold text-green-600 font-mono text-sm">${tx.amount.toFixed(2)}</span></div>
-                            <div>رصيده المتاح للتداول: <span className="font-semibold font-mono text-gray-600">${client?.balance.toFixed(2)}</span></div>
+                            <div>رصيده المتاح للتداول: <span className="font-semibold font-mono text-gray-600">${(client?.balance || 0).toFixed(2)}</span></div>
                             <div className="col-span-2">تاريخ الإرسال: <span className="font-mono text-gray-500">{tx.date}</span></div>
                           </div>
 

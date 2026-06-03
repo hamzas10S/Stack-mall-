@@ -637,7 +637,7 @@ export default function Vip() {
                           مبلغ العقد المتاح
                         </span>
                         <span className="text-[14.5px] font-black text-slate-800 font-mono tracking-tight leading-none">
-                          {currentOrderState !== "buy_behalf" ? "0.00" : `$${activePackage.price.toFixed(2)}`}
+                          {currentOrderState !== "buy_behalf" ? "0.00" : `$${(activePackage?.price || 50).toFixed(2)}`}
                         </span>
                       </div>
 

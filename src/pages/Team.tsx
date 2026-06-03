@@ -16,7 +16,7 @@ export default function Team() {
   const stats = getTeamStats();
 
   const inviteCode = userInfo.id;
-  const inviteUrl = `${window.location.origin}/register?ref=${inviteCode}`;
+  const inviteUrl = userInfo.inviteUrl || `${window.location.origin}/register?ref=${inviteCode}`;
 
   const handleCopy = (text: string, setter: any) => {
     navigator.clipboard.writeText(text);
@@ -45,13 +45,13 @@ export default function Team() {
         {/* First Card */}
         <div className="bg-[#eaf1ff] rounded-[16px] p-4 shadow-sm relative overflow-hidden mb-4 flex flex-col gap-4">
           <div className="flex justify-between items-center">
-             <div className="flex flex-col items-start gap-0.5">
+             <div className="flex flex-col items-start gap-0.5 overflow-hidden flex-1 pr-2">
                <span className="text-[#6c91cc] font-bold text-[11px]">{t("رمز الدعوة")}</span>
-               <span className="font-bold text-[22px] text-[#1f4a9b]">{inviteCode}</span>
+               <span className="font-bold text-[22px] sm:text-[18px] text-[#1f4a9b] break-all max-w-[200px] leading-tight mt-1">{inviteCode.length > 20 ? inviteCode.substring(0, 13) + '...' : inviteCode}</span>
              </div>
              <button 
                onClick={() => handleCopy(inviteCode, setCopiedCode)}
-               className="bg-[#3a7af2] hover:bg-blue-600 text-white px-5 py-1 rounded-full font-bold text-[13px] shadow-sm active:scale-95 transition-all w-[80px]"
+               className="bg-[#3a7af2] hover:bg-blue-600 text-white px-5 py-1 rounded-full font-bold text-[13px] shadow-sm active:scale-95 transition-all w-[80px] shrink-0"
              >
                {copiedCode ? t("تم!") : t("ينسخ")}
              </button>

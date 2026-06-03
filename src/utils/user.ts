@@ -15,8 +15,9 @@ export interface SimulatedUser {
   phone?: string;
   walletAddress?: string;
   transactionPassword?: string;
-  referredBy?: string;
+  referredBy?: string; // This can now hold the 10000x userCode or UUID
   hasCompletedTraining?: boolean;
+  userCode?: string; // Short invite code/account ID
 }
 
 export interface SimulatedTransaction {
@@ -35,6 +36,7 @@ export interface SimulatedTransaction {
 const DEFAULT_USERS: SimulatedUser[] = [
   {
     id: "10001",
+    userCode: "100001",
     email: "hamozasalom@gmail.com",
     regDate: "2026-05-18",
     isActive: false,
@@ -65,23 +67,53 @@ export const initSupabaseSync = async () => {
     }
 
     const { data: usersData } = await query;
+    const localUsersData: Record<string, SimulatedUser> = {};
+    let localUsersArray = [];
+    try {
+      localUsersArray = JSON.parse(localStorage.getItem("simulated_users") || "[]");
+    } catch(e) {
+      console.warn("Could not parse local users data", e);
+    }
+    if (Array.isArray(localUsersArray)) {
+       localUsersArray.forEach(u => {
+          if (u.id) localUsersData[u.id] = u;
+       });
+    }
+
     if (usersData && usersData.length > 0) {
-      supabaseUsersCache = usersData.map(u => ({
-        id: u.id.toString(),
-        email: u.email,
-        regDate: u.reg_date || new Date().toISOString(),
-        isActive: u.is_active || false,
-        packageBought: u.package_bought || "",
-        withdrawalsCount: u.withdrawals_count || 0,
-        rechargesCount: u.recharges_count || 0,
-        balance: Number(u.balance) || 0,
-        contractBalance: Number(u.contract_balance) || 0,
-        lastActivity: u.last_activity || "نشط الآن",
-        isExpired: u.is_expired || false,
-        phone: u.phone,
-        referredBy: u.referred_by,
-        hasCompletedTraining: u.has_completed_training || false
-      }));
+      supabaseUsersCache = usersData.map(u => {
+        const matchingLocal = localUsersData[u.id];
+        return {
+          id: u.id.toString(),
+          userCode: matchingLocal?.userCode || undefined, // Fallback to local
+          email: u.email,
+          regDate: u.reg_date || new Date().toISOString(),
+          isActive: u.is_active || false,
+          packageBought: u.package_bought || "",
+          withdrawalsCount: u.withdrawals_count || 0,
+          rechargesCount: u.recharges_count || 0,
+          balance: Number(u.balance) || 0,
+          contractBalance: Number(u.contract_balance) || 0,
+          lastActivity: u.last_activity || "نشط الآن",
+          isExpired: u.is_expired || false,
+          phone: u.phone,
+          referredBy: u.referred_by,
+          hasCompletedTraining: u.has_completed_training || false
+        };
+      });
+      // run backfill logic for any that still missed
+      let currentMaxCode = 100000;
+      supabaseUsersCache.forEach(u => {
+        if (u.userCode) {
+           currentMaxCode = Math.max(currentMaxCode, parseInt(u.userCode));
+        }
+      });
+      supabaseUsersCache.forEach(u => {
+        if (!u.userCode) {
+          currentMaxCode++;
+          u.userCode = currentMaxCode.toString();
+        }
+      });
     }
 
     // Only fetch current user's transactions
@@ -140,6 +172,28 @@ export const getSimulatedUsers = (): SimulatedUser[] => {
       localStorage.setItem("simulated_users", JSON.stringify(DEFAULT_USERS));
       return DEFAULT_USERS;
     }
+    
+    // Backfill userCodes
+    let modified = false;
+    let currentMaxCode = 100000;
+    parsed.forEach(u => {
+      if (u.userCode) {
+         currentMaxCode = Math.max(currentMaxCode, parseInt(u.userCode));
+      }
+    });
+    
+    parsed.forEach(u => {
+      if (!u.userCode) {
+        currentMaxCode++;
+        u.userCode = currentMaxCode.toString();
+        modified = true;
+      }
+    });
+
+    if (modified) {
+       localStorage.setItem("simulated_users", JSON.stringify(parsed));
+    }
+    
     return parsed;
   } catch (e) {
     localStorage.setItem("simulated_users", JSON.stringify(DEFAULT_USERS));
@@ -169,8 +223,18 @@ export const registerSimulatedUser = async (email: string, phone: string, referr
   
   let nextId = uid || crypto.randomUUID();
   
+  let maxCode = 100000;
+  users.forEach(u => {
+     if (u.userCode) {
+        const c = parseInt(u.userCode);
+        if (c > maxCode) maxCode = c;
+     }
+  });
+  const nextUserCode = (maxCode + 1).toString();
+  
   const newUser: SimulatedUser = {
     id: nextId,
+    userCode: nextUserCode,
     email: email.trim() || `${phone || 'user'}@gmail.com`,
     regDate: new Date().toISOString().split("T")[0],
     isActive: false,
@@ -223,9 +287,11 @@ export const getUserInfo = () => {
   }
 
   return {
-    id: userId,
-    inviteUrl: `https://StackMall.com/${userId}`,
-    isExpired: current?.isExpired || false
+    id: current?.userCode || userId, // Display short code!
+    realId: userId,
+    inviteUrl: `${window.location.origin}/register?ref=${current?.userCode || userId}`,
+    isExpired: current?.isExpired || false,
+    userCode: current?.userCode || userId
   };
 };
 
@@ -330,7 +396,10 @@ export const getTeamStats = () => {
   const currentUserId = localStorage.getItem("userId") || "10001";
   const users = getSimulatedUsers();
   
-  const teamUsers = users.filter(u => u.referredBy === currentUserId);
+  const currentUser = users.find(u => u.id === currentUserId);
+  const userCode = currentUser?.userCode || currentUserId;
+  
+  const teamUsers = users.filter(u => u.referredBy === currentUserId || u.referredBy === userCode);
   const teamSize = teamUsers.length;
   const validUsers = teamUsers.filter(u => u.isActive).length;
   const unrechargedUsers = teamUsers.filter(u => !u.isActive).length;
