@@ -217,13 +217,14 @@ export default function AdminDashboard() {
           return;
         }
 
-        // Optional: If you still want to use the PIN check as an extra frontend layer, it should be matched against a backend value. 
-        // We will skip testing the locally hardcoded PIN for highest security, but if the user required a PIN, we could verify with DB here.
         if (!securityPinInput || securityPinInput.trim() === '') {
            setLoginError("الرجاء إدخال الرمز السري.");
            await supabase.auth.signOut();
            return;
         }
+
+        // You can add logic to compare the PIN against a value stored in Supabase here if required.
+        // For example, an `admin_pin` column in `app_users`.
 
         sessionStorage.setItem("admin_logged_in", "true");
         localStorage.setItem("admin_logged_in", "true");
