@@ -242,10 +242,11 @@ export default function AdminDashboard() {
     setTimeout(() => setFeedbackMsg(""), 4500);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     sessionStorage.removeItem("admin_logged_in");
     localStorage.removeItem("admin_logged_in");
     localStorage.removeItem("admin_last_activity");
+    await supabase.auth.signOut();
     setIsAuthorized(false);
   };
 

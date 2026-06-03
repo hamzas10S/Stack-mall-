@@ -11,6 +11,7 @@ import {
   User,
 } from "lucide-react";
 import { getUserInfo, getUserBalance, getUserContractBalance } from "../utils/user";
+import { supabase } from "../utils/supabase";
 import { useTranslation } from "../context/LanguageContext";
 
 export default function Profile() {
@@ -238,7 +239,11 @@ export default function Profile() {
           <MenuItem
             icon={<Power size={14} className="text-[#fc6e36]" />}
             label={t("تسجيل الخروج")}
-            onClick={() => navigate("/login")}
+            onClick={async () => {
+              await supabase.auth.signOut();
+              localStorage.removeItem("userId");
+              navigate("/login");
+            }}
             hasBorder={false}
             dir={dir}
           />

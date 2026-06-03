@@ -180,7 +180,7 @@ export default function Withdraw() {
     }
     
     // Fallback sync local structure as well so old features don't break instantly
-    addSimulatedTransaction("withdraw", amtVal, "BEP20", finalWallet, "", currentUserId, password);
+    addSimulatedTransaction("withdraw", amtVal, "BEP20", finalWallet, "", currentUserId);
     
     setSuccessMsg('تم إرسال طلب السحب بنجاح بانتظار موافقة الإدارة!');
     setAmount('');

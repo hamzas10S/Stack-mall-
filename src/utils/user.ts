@@ -29,7 +29,6 @@ export interface SimulatedTransaction {
   address?: string;
   network?: string;
   proofImage?: string; // base64 or placeholder URL image
-  txPassword?: string;
 }
 
 // Initial Simulated Seed Data
@@ -381,8 +380,7 @@ export const addSimulatedTransaction = (
   network = "BEP20",
   address = "",
   proofImage = "",
-  userId = "10001",
-  txPassword = ""
+  userId = "10001"
 ) => {
   const txs = getSimulatedTransactions();
   const currentUserId = localStorage.getItem("userId") || "10001";
@@ -399,8 +397,7 @@ export const addSimulatedTransaction = (
     date: new Date().toISOString().replace("T", " ").slice(0, 16),
     network,
     address,
-    proofImage,
-    txPassword
+    proofImage
   };
   txs.unshift(newTx);
   updateSimulatedTransactions(txs);

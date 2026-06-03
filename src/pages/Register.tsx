@@ -172,26 +172,27 @@ export default function Register() {
         setValidationError("حدث خطأ في التسجيل. قد يكون الحساب موجوداً.");
         refreshCaptcha();
       } else if (data.user) {
-        // Insert directly to catch errors
-        const { error: insErr } = await supabase.from('app_users').insert([{
+        // Upsert with explicit onConflict to avoid duplicate key errors if a trigger already created the row.
+        const { error: insErr } = await supabase.from('app_users').upsert({
           id: data.user.id,
           email: emailObj,
           phone: phone,
-          transaction_password: payPassword,
           referred_by: inviteCode || null,
-          reg_date: new Date().toISOString().split("T")[0],
-          is_active: false,
-          balance: 0,
-          contract_balance: 0
-        }]);
+          reg_date: new Date().toISOString().split("T")[0]
+        }, { onConflict: 'id' });
 
         if (insErr) {
             console.error("Supabase insert error:", insErr);
-            setValidationError("عطل في قاعدة البيانات: " + insErr.message + (data.session === null ? " (رجاء إيقاف Confirm Email في Supabase)" : ""));
+            setValidationError("عطل في عملية إنشاء الحساب. تأكد من الإعدادات." + (data.session === null ? " (رجاء إيقاف Confirm Email في Supabase)" : ""));
             refreshCaptcha();
             setIsLoading(false);
             return;
         }
+        
+        // Securely set the transaction password using an RPC instead of plain-text INSERT
+        await supabase.rpc('change_transaction_password', {
+            new_password: payPassword
+        });
 
         await registerSimulatedUser(emailObj, phone, inviteCode || undefined, data.user.id);
         if (inviteCode) {

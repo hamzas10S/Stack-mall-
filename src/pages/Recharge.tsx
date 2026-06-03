@@ -52,12 +52,8 @@ export default function Recharge() {
         
       } catch (err: any) {
         console.error("Upload error:", err);
-        setErrorMsg('حدث خطأ أثناء رفع الصورة: ' + (err.message || 'حاول مرة أخرى'));
+        setErrorMsg('حدث خطأ أثناء رفع الصورة حاول مرة أخرى');
         setFileName('');
-        // Fallback to base64 if bucket fails in early testing
-        const reader = new FileReader();
-        reader.onloadend = () => setProofImage(reader.result as string);
-        reader.readAsDataURL(file);
       } finally {
         setIsUploading(false);
       }
