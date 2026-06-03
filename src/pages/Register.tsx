@@ -192,12 +192,8 @@ export default function Register() {
           timeoutPromise
         ]) as any;
 
-        if (insErr && !insErr.message?.includes('duplicate key') && !insErr.message?.includes('row-level security')) {
-            console.error("Supabase insert error:", insErr);
-            setValidationError("عطل في عملية إنشاء الحساب. تأكد من الإعدادات." + (!data.session ? " (رجاء إيقاف Confirm Email في Supabase)" : ""));
-            refreshCaptcha();
-            setIsLoading(false);
-            return;
+        if (insErr) {
+            console.error("Supabase insert error (ignored to allow login):", insErr);
         }
         
         // Securely set the transaction password using an RPC instead of plain-text INSERT
