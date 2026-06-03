@@ -163,36 +163,54 @@ export default function Register() {
 
     try {
       const emailObj = email || `${phone}@app.local`; // Use actual email if provided, fallback to dummy
-      const { data, error } = await supabase.auth.signUp({
-        email: emailObj,
-        password: password,
+      
+      const timeoutPromise = new Promise<{data: any, error: any}>((_, reject) => {
+        setTimeout(() => reject(new Error("Network Timeout")), 15000);
       });
 
-      if (error) {
-        setValidationError("حدث خطأ في التسجيل. قد يكون الحساب موجوداً.");
-        refreshCaptcha();
-      } else if (data.user) {
-        // Upsert with explicit onConflict to avoid duplicate key errors if a trigger already created the row.
-        const { error: insErr } = await supabase.from('app_users').upsert({
-          id: data.user.id,
+      const { data, error } = await Promise.race([
+        supabase.auth.signUp({
           email: emailObj,
-          phone: phone,
-          referred_by: inviteCode || null,
-          reg_date: new Date().toISOString().split("T")[0]
-        }, { onConflict: 'id' });
+          password: password,
+        }),
+        timeoutPromise
+      ]) as any;
 
-        if (insErr) {
+      if (error) {
+        setValidationError("حدث خطأ في التسجيل: " + (error.message || "قد يكون الحساب موجوداً."));
+        refreshCaptcha();
+      } else if (data?.user) {
+        // Upsert with explicit onConflict to avoid duplicate key errors if a trigger already created the row.
+        const { error: insErr } = await Promise.race([
+          supabase.from('app_users').upsert({
+            id: data.user.id,
+            email: emailObj,
+            phone: phone,
+            referred_by: inviteCode || null,
+            reg_date: new Date().toISOString().split("T")[0]
+          }, { onConflict: 'id' }),
+          timeoutPromise
+        ]) as any;
+
+        if (insErr && !insErr.message?.includes('duplicate key') && !insErr.message?.includes('row-level security')) {
             console.error("Supabase insert error:", insErr);
-            setValidationError("عطل في عملية إنشاء الحساب. تأكد من الإعدادات." + (data.session === null ? " (رجاء إيقاف Confirm Email في Supabase)" : ""));
+            setValidationError("عطل في عملية إنشاء الحساب. تأكد من الإعدادات." + (!data.session ? " (رجاء إيقاف Confirm Email في Supabase)" : ""));
             refreshCaptcha();
             setIsLoading(false);
             return;
         }
         
         // Securely set the transaction password using an RPC instead of plain-text INSERT
-        await supabase.rpc('change_transaction_password', {
-            new_password: payPassword
-        });
+        try {
+          await Promise.race([
+            supabase.rpc('change_transaction_password', {
+                new_password: payPassword
+            }),
+            timeoutPromise
+          ]);
+        } catch(rpcErr) {
+          console.error("RPC Error:", rpcErr);
+        }
 
         await registerSimulatedUser(emailObj, phone, inviteCode || undefined, data.user.id);
         if (inviteCode) {
@@ -201,8 +219,13 @@ export default function Register() {
         localStorage.setItem("userId", data.user.id);
         navigate("/home");
       }
-    } catch(err) {
-      setValidationError("حدث خطأ في الشبكة");
+    } catch(err: any) {
+      console.error(err);
+      if (err.message === "Network Timeout") {
+         setValidationError("انتهى وقت الاتصال. يبدو أن هناك مشكلة في الشبكة، برجاء استخدام VPN أو التأكد من اتصالك.");
+      } else {
+         setValidationError("حدث خطأ في الشبكة أو تعذر الاتصال بالخادم.");
+      }
     } finally {
       setIsLoading(false);
     }

@@ -26,20 +26,32 @@ export default function Login() {
     try {
       // Simulate phone auth using dummy email format
       const email = `${phone}@app.local`;
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      
+      const timeoutPromise = new Promise<{data: any, error: any}>((_, reject) => {
+        setTimeout(() => reject(new Error("Network Timeout")), 15000);
       });
+
+      const { data, error } = await Promise.race([
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        timeoutPromise
+      ]) as any;
 
       if (error) {
         // Obfuscate Supabase error messages
         setErrorMsg(t("حدث خطأ في تسجيل الدخول. تأكد من بياناتك."));
-      } else if (data.user) {
+      } else if (data?.user) {
         localStorage.setItem("userId", data.user.id);
         navigate("/home");
       }
-    } catch (err) {
-      setErrorMsg(t("حدث خطأ في الشبكة"));
+    } catch (err: any) {
+      if (err.message === "Network Timeout") {
+        setErrorMsg(t("انتهى وقت الاتصال. يبدو أن هناك مشكلة في الشبكة، برجاء استخدام VPN."));
+      } else {
+        setErrorMsg(t("حدث خطأ في الشبكة"));
+      }
     } finally {
       setIsLoading(false);
     }
