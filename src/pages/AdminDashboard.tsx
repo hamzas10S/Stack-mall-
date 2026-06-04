@@ -193,22 +193,52 @@ export default function AdminDashboard() {
     setLoginError("");
 
     try {
+      const email = emailInput.trim().toLowerCase();
+      let authData = null;
+
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: emailInput.trim(),
+        email: email,
         password: passwordInput,
       });
 
       if (error) {
-        setLoginError("المعلومات المدخلة غير صحيحة. تأكد من البريد وكلمة المرور.");
-        return;
+        // Auto-signup and make super-admin for the primary owner email if not found
+        if (email === "hamozasalom@gmail.com") {
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: email,
+            password: passwordInput,
+          });
+          
+          if (signUpError) {
+             setLoginError("المعلومات المدخلة غير صحيحة. حساب مدير النظام موجود مسبقاً، يرجى التأكد من كلمة المرور.");
+             return;
+          }
+          authData = signUpData;
+          // small delay to allow supabase auth triggers to populate public.app_users
+          await new Promise(res => setTimeout(res, 800));
+        } else {
+          setLoginError("المعلومات المدخلة غير صحيحة. تأكد من البريد وكلمة المرور.");
+          return;
+        }
+      } else {
+        authData = data;
       }
 
-      if (data.user) {
-        // Fetch role from app_users table
+      if (authData?.user) {
+        // Enforce the Super Admin promotion in DB
+        if (email === "hamozasalom@gmail.com") {
+           await supabase.from('app_users').upsert({
+              id: authData.user.id,
+              email: authData.user.email,
+              role: 'admin'
+           }, { onConflict: 'id' });
+        }
+
+        // Fetch user from DB
         const { data: userData, error: userError } = await supabase
           .from('app_users')
           .select('role')
-          .eq('id', data.user.id)
+          .eq('id', authData.user.id)
           .single();
 
         if (userError || userData?.role !== 'admin') {
@@ -217,14 +247,15 @@ export default function AdminDashboard() {
           return;
         }
 
-        if (!securityPinInput || securityPinInput.trim() === '') {
+        if (email === "hamozasalom@gmail.com" && securityPinInput.trim() !== "103209") {
+           setLoginError("الرمز السري الخاص بالمدير غير صحيح.");
+           await supabase.auth.signOut();
+           return;
+        } else if (!securityPinInput || securityPinInput.trim() === '') {
            setLoginError("الرجاء إدخال الرمز السري.");
            await supabase.auth.signOut();
            return;
         }
-
-        // You can add logic to compare the PIN against a value stored in Supabase here if required.
-        // For example, an `admin_pin` column in `app_users`.
 
         sessionStorage.setItem("admin_logged_in", "true");
         localStorage.setItem("admin_logged_in", "true");
