@@ -142,8 +142,20 @@ export default function AdminDashboard() {
       const { data: liveTxs, error: txsErr } = await supabase.from('app_transactions').select('*');
       
       if (liveUsers && !usersErr) {
+        let localUsersArray: any[] = [];
+        try {
+          localUsersArray = JSON.parse(localStorage.getItem("simulated_users") || "[]");
+        } catch(e) {}
+        const localUserCodes: Record<string, string> = {};
+        if (Array.isArray(localUsersArray)) {
+           localUsersArray.forEach(u => {
+              if (u.id && u.userCode) localUserCodes[u.id] = u.userCode;
+           });
+        }
+
         const mappedUsers = liveUsers.map(u => ({
           id: u.id.toString(),
+          userCode: localUserCodes[u.id.toString()] || u.user_code || "",
           email: u.email,
           regDate: u.reg_date || new Date().toISOString(),
           isActive: u.is_active || false,
@@ -158,6 +170,20 @@ export default function AdminDashboard() {
           referredBy: u.referred_by,
           hasCompletedTraining: u.has_completed_training || false
         }));
+
+        let currentMaxCode = 100000;
+        mappedUsers.forEach(u => {
+           if (u.userCode) {
+              currentMaxCode = Math.max(currentMaxCode, parseInt(u.userCode));
+           }
+        });
+        mappedUsers.forEach(u => {
+           if (!u.userCode) {
+              currentMaxCode++;
+              u.userCode = currentMaxCode.toString();
+           }
+        });
+
         setUsers(mappedUsers);
       } else {
         setUsers(getSimulatedUsers());
@@ -381,7 +407,7 @@ export default function AdminDashboard() {
 
     const userList = getSimulatedUsers();
     const query = selectedUserId.trim().toLowerCase();
-    const userIndex = userList.findIndex(u => u.id.toLowerCase() === query || u.email.toLowerCase() === query);
+    const userIndex = userList.findIndex(u => u.id.toLowerCase() === query || u.email.toLowerCase() === query || (u.userCode && u.userCode === query));
     
     if (userIndex === -1) {
       triggerFeedback("حساب المستخدم غير موجود! تأكد من الرقم التسلسلي أو البريد.");
@@ -414,7 +440,7 @@ export default function AdminDashboard() {
   // Filter users based on query
   const filteredUsers = users.filter(u => {
     const q = searchQuery.toLowerCase();
-    return u.id.includes(q) || u.email.toLowerCase().includes(q) || (u.packageBought || "").toLowerCase().includes(q);
+    return u.id.includes(q) || (u.userCode || "").includes(q) || u.email.toLowerCase().includes(q) || (u.packageBought || "").toLowerCase().includes(q);
   });
 
   // Filter active/funded users for Tab 4
@@ -686,7 +712,7 @@ export default function AdminDashboard() {
                         return (
                           <tr key={client.id} className={`hover:bg-slate-50/50 transition-colors ${client.isExpired ? 'bg-red-50/30' : ''}`}>
                             <td className="p-3 font-mono font-bold text-blue-600">
-                              {client.id}
+                              #{client.userCode || client.id}
                               {client.isExpired && (
                                 <span className="mr-1 inline-block bg-red-100 text-red-700 font-bold text-[8.5px] px-1.5 py-0.5 rounded">
                                   منتهي الصلاحية
@@ -763,7 +789,7 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>المستخدم (ID): <span className="font-bold text-gray-900 font-mono">{tx.userId}</span></div>
+                          <div>المستخدم (ID): <span className="font-bold text-gray-900 font-mono">#{client?.userCode || tx.userId}</span></div>
                           <div>بريده الموثق: <span className="font-mono text-gray-650">{client?.email || 'غير معروف'}</span></div>
                           <div>رقم جواله / حسابه: <span className="font-mono text-[#1975e5] font-bold">{client?.phone || 'غير مسجل أو غير متاح'}</span></div>
                           <div>رصيد العميل الحالي: <span className="font-bold text-green-600 font-mono">${(client?.balance || 0).toFixed(2)}</span></div>
@@ -833,7 +859,7 @@ export default function AdminDashboard() {
                           </div>
 
                           <div className="grid grid-cols-2 gap-3 text-xs leading-relaxed">
-                            <div>رقم العميل (ID): <span className="font-bold text-gray-900 font-mono">{tx.userId}</span></div>
+                            <div>رقم العميل (ID): <span className="font-bold text-gray-900 font-mono">#{client?.userCode || tx.userId}</span></div>
                             <div>البريد المسجل: <span className="font-mono text-gray-600">{client?.email || 'غير معروف'}</span></div>
                             <div>المبلغ المزعوم تحويله: <span className="font-bold text-green-600 font-mono text-sm">${tx.amount.toFixed(2)}</span></div>
                             <div>رصيده المتاح للتداول: <span className="font-semibold font-mono text-gray-600">${(client?.balance || 0).toFixed(2)}</span></div>
@@ -996,10 +1022,10 @@ export default function AdminDashboard() {
                         fundedUsers.map(u => (
                           <tr 
                             key={u.id} 
-                            onClick={() => setSelectedUserId(u.id)}
-                            className={`cursor-pointer transition hover:bg-slate-50 ${selectedUserId === u.id ? 'bg-blue-50/70' : ''}`}
+                            onClick={() => setSelectedUserId(u.userCode || u.id)}
+                            className={`cursor-pointer transition hover:bg-slate-50 ${selectedUserId === (u.userCode || u.id) ? 'bg-blue-50/70' : ''}`}
                           >
-                            <td className="p-3 font-mono font-bold text-blue-600">#{u.id}</td>
+                            <td className="p-3 font-mono font-bold text-blue-600">#{u.userCode || u.id}</td>
                             <td className="p-3 text-gray-600 font-mono">{u.email}</td>
                             <td className="p-3"><span className="bg-blue-50 text-blue-750 px-2 py-0.5 rounded font-bold">{u.packageBought || 'بدون باقة'}</span></td>
                             <td className="p-3 font-bold text-green-600 font-mono">${u.balance.toFixed(2)}</td>

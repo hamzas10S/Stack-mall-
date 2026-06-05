@@ -180,10 +180,13 @@ export default function Register() {
         setValidationError("حدث خطأ في التسجيل: " + (error.message || "قد يكون الحساب موجوداً."));
         refreshCaptcha();
       } else if (data?.user) {
+        const randomCode = Math.floor(100000 + Math.random() * 900000).toString();
+
         // Upsert with explicit onConflict to avoid duplicate key errors if a trigger already created the row.
         const { error: insErr } = await Promise.race([
           supabase.from('app_users').upsert({
             id: data.user.id,
+            user_code: randomCode,
             email: emailObj,
             phone: phone,
             referred_by: inviteCode || null,
@@ -208,7 +211,7 @@ export default function Register() {
           console.error("RPC Error:", rpcErr);
         }
 
-        await registerSimulatedUser(emailObj, phone, inviteCode || undefined, data.user.id);
+        await registerSimulatedUser(emailObj, phone, inviteCode || undefined, data.user.id, randomCode);
         if (inviteCode) {
           addSimulatedReferral();
         }

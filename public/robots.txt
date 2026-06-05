@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /profile/
+Disallow: /team/
+Disallow: /recharge/
+Disallow: /withdraw/
+Disallow: /income/
+Disallow: /records/
+Disallow: /settings/
+
+Sitemap: https://stackmall.netlify.app/sitemap.xml

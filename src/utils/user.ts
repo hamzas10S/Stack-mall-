@@ -67,6 +67,33 @@ export const initSupabaseSync = async () => {
     }
 
     const { data: usersData } = await query;
+    let allUsersData = [...(usersData || [])];
+    
+    // Also fetch the team members to properly calculate team stats
+    if (currentUserId && usersData && usersData.length > 0) {
+        const currentUser = usersData[0];
+        const userCode = currentUser.user_code || currentUser.id;
+        
+        try {
+            const { data: teamData } = await supabase.from('app_users')
+               .select('*')
+               .or(`referred_by.eq.${userCode},referred_by.eq.${currentUserId}`);
+               
+            if (teamData && teamData.length > 0) {
+               // Append unique users
+               const existingIds = new Set(allUsersData.map(u => u.id));
+               teamData.forEach(t => {
+                   if (!existingIds.has(t.id)) {
+                       allUsersData.push(t);
+                       existingIds.add(t.id);
+                   }
+               });
+            }
+        } catch (teamErr) {
+            console.error("Could not fetch team data", teamErr);
+        }
+    }
+
     const localUsersData: Record<string, SimulatedUser> = {};
     let localUsersArray = [];
     try {
@@ -80,8 +107,8 @@ export const initSupabaseSync = async () => {
        });
     }
 
-    if (usersData && usersData.length > 0) {
-      supabaseUsersCache = usersData.map(u => {
+    if (allUsersData && allUsersData.length > 0) {
+      supabaseUsersCache = allUsersData.map(u => {
         const matchingLocal = localUsersData[u.id];
         return {
           id: u.id.toString(),
@@ -218,19 +245,19 @@ export const updateSimulatedUsers = async (users: SimulatedUser[]) => {
   } catch(e) {}
 };
 
-export const registerSimulatedUser = async (email: string, phone: string, referredBy?: string, uid?: string): Promise<SimulatedUser> => {
+export const registerSimulatedUser = async (email: string, phone: string, referredBy?: string, uid?: string, explicitUserCode?: string): Promise<SimulatedUser> => {
   const users = getSimulatedUsers();
   
   let nextId = uid || crypto.randomUUID();
   
-  let maxCode = 100000;
-  users.forEach(u => {
-     if (u.userCode) {
-        const c = parseInt(u.userCode);
-        if (c > maxCode) maxCode = c;
+  let nextUserCode = explicitUserCode;
+  
+  if (!nextUserCode) {
+     nextUserCode = Math.floor(100000 + Math.random() * 900000).toString();
+     while (users.some(u => u.userCode === nextUserCode)) {
+         nextUserCode = Math.floor(100000 + Math.random() * 900000).toString();
      }
-  });
-  const nextUserCode = (maxCode + 1).toString();
+  }
   
   const newUser: SimulatedUser = {
     id: nextId,
