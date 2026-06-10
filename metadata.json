@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "StackMall",
+  "description": "ستاك مول - الشركة البريطانية الرائدة في خدمات الدروب شوبينج والاستثمار طويل الأمد لعملاء الشرق الأوسط",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
